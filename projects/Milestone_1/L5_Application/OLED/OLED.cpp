@@ -123,7 +123,8 @@ OLED::OLED(uint8_t i2c_address, uint8_t width, uint8_t height)
     OLED::bufsize = OLED::pages * width;
     OLED::screen_buffer = (uint8_t *) malloc(OLED::bufsize);
     OLED::X = OLED::Y = 0;
-    OLED::ttyMode = OLED_DEFAULT_TTY_MODE;
+    OLED::ttyMode = OLED_DEFAULT_TTY_MODE
+    ;
 #ifdef DEBUG_OLED
     printf("address: %X, height: %u, width: %u, pages: %u, bufsize: %u, screenbuffer: %X\n", OLED::i2c_address, OLED::height, OLED::width, OLED::pages,
             OLED::bufsize, OLED::screen_buffer);
@@ -314,10 +315,42 @@ void OLED::draw_circle(uint_fast8_t x, uint_fast8_t y, uint_fast8_t radius, tFil
 
 void OLED::draw_line(uint_fast8_t x0, uint_fast8_t y0, uint_fast8_t x1, uint_fast8_t y1, tColor color)
 {
+    // Algorithm copied from Wikipedia
+    int_fast16_t dx = abs(static_cast<int_fast16_t>(x1) - static_cast<int_fast16_t>(x0));
+    int_fast16_t sx = x0 < x1 ? 1 : -1;
+    int_fast16_t dy = -abs(static_cast<int_fast16_t>(y1) - static_cast<int_fast16_t>(y0));
+    int_fast16_t sy = y0 < y1 ? 1 : -1;
+    int_fast16_t err = dx + dy;
+    int_fast16_t e2;
+
+    while (1) {
+        draw_pixel(x0, y0, color);
+        if (x0 == x1 && y0 == y1) {
+            break;
+        }
+        e2 = 2 * err;
+        if (e2 > dy) {
+            err += dy;
+            x0 += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y0 += sy;
+        }
+    }
 }
 
 void OLED::draw_pixel(uint_fast8_t x, uint_fast8_t y, tColor color)
 {
+    if (x >= width || y >= height) {
+        return;
+    }
+    if (color == WHITE) {
+        screen_buffer[x + (y / 8) * width] |= (1 << (y & 7)); // set bit
+    }
+    else {
+        screen_buffer[x + (y / 8) * width] &= ~(1 << (y & 7)); // clear bit
+    }
 }
 
 void OLED::set_invert(bool enable)
@@ -335,111 +368,97 @@ void OLED::set_scrolling(tScrollEffect scroll_type, uint_fast8_t first_page, uin
 
 void OLED::scroll_up(uint_fast8_t num_lines, uint_fast8_t delay_ms)
 {
-    if (delay_ms == 0)
-        {
-            // Scroll full pages, fast algorithm
-            uint_fast8_t scroll_pages = num_lines / 8;
-            for (uint_fast8_t i = 0; i < pages; i++)
-            {
-                for (uint_fast8_t x = 0; x < width; x++)
-                {
-                    uint16_t index = i * width + x;
-                    uint16_t index2 = (i + scroll_pages) * width + x;
-                    if (index2 < bufsize)
-                    {
-                        screen_buffer[index] = screen_buffer[index2];
-                    }
-                    else
-                    {
-                        screen_buffer[index] = 0;
-                    }
+    if (delay_ms == 0) {
+        // Scroll full pages, fast algorithm
+        uint_fast8_t scroll_pages = num_lines / 8;
+        for (uint_fast8_t i = 0; i < pages; i++) {
+            for (uint_fast8_t x = 0; x < width; x++) {
+                uint16_t index = i * width + x;
+                uint16_t index2 = (i + scroll_pages) * width + x;
+                if (index2 < bufsize) {
+                    screen_buffer[index] = screen_buffer[index2];
+                }
+                else {
+                    screen_buffer[index] = 0;
                 }
             }
-            num_lines -= scroll_pages * 8;
         }
+        num_lines -= scroll_pages * 8;
+    }
 
-        // Scroll the remainder line by line
-        bool need_refresh=true;
-        if (num_lines > 0)
-        {
-            uint16_t start= xTaskGetMsCount() & 0xFFFF;
-            uint16_t target_time=0;
+    // Scroll the remainder line by line
+    bool need_refresh = true;
+    if (num_lines > 0) {
+        uint16_t start = xTaskGetMsCount() & 0xFFFF;
+        uint16_t target_time = 0;
 
-            for (uint_fast8_t i = 0; i < num_lines; i++)
-            {
+        for (uint_fast8_t i = 0; i < num_lines; i++) {
 
-                // Scroll everything 1 line up
-                for (uint_fast8_t j = 0; j < pages; j++)
-                {
-                    uint16_t index = j*width;
-                    uint16_t index2 = index + width;
-                    for (uint_fast8_t x = 0; x < width; x++)
-                    {
-                        uint_fast8_t carry = 0;
-                        if (index2 < bufsize)
-                        {
-                            if (screen_buffer[index2] & 1)
-                            {
-                                carry = 128;
-                            }
+            // Scroll everything 1 line up
+            for (uint_fast8_t j = 0; j < pages; j++) {
+                uint16_t index = j * width;
+                uint16_t index2 = index + width;
+                for (uint_fast8_t x = 0; x < width; x++) {
+                    uint_fast8_t carry = 0;
+                    if (index2 < bufsize) {
+                        if (screen_buffer[index2] & 1) {
+                            carry = 128;
                         }
-                        screen_buffer[index] = (screen_buffer[index] >> 1) | carry;
-                        index++;
-                        index2++;
                     }
-                }
-                need_refresh=true;
-                target_time+=delay_ms;
-
-                // Refresh the display only if we have some time
-                uint16_t now= xTaskGetMsCount() & 0xFFFF;
-                if (now-start < target_time)
-                {
-                    display();
-                    need_refresh=false;
-                }
-
-                // If we have still more time, then yield a while
-                while((xTaskGetMsCount() & 0xFFFF)-start < target_time)
-                {
-                    //yield();
+                    screen_buffer[index] = (screen_buffer[index] >> 1) | carry;
+                    index++;
+                    index2++;
                 }
             }
-        }
+            need_refresh = true;
+            target_time += delay_ms;
 
-        if (need_refresh)
-        {
-            display();
+            // Refresh the display only if we have some time
+            uint16_t now = xTaskGetMsCount() & 0xFFFF;
+            if (now - start < target_time) {
+                display();
+                need_refresh = false;
+            }
+
+            // If we have still more time, then yield a while
+            while ((xTaskGetMsCount() & 0xFFFF) - start < target_time) {
+                //yield();
+            }
         }
+    }
+
+    if (need_refresh) {
+        display();
+    }
 }
 
-size_t OLED::oprintf(uint_fast8_t x , uint_fast8_t y, const char *format, ...)
+size_t OLED::oprintf(uint_fast8_t x, uint_fast8_t y, const char *format, ...)
 {
     //TODO printf
     va_list arg;
+    va_start(arg, format);
+    char temp[64];
+    char* buffer = temp;
+    size_t len = vsnprintf(temp, sizeof(temp), format, arg);
+    va_end(arg);
+    if (len > sizeof(temp) - 1) {
+        buffer = new char[len + 1];
+        if (!buffer) {
+            return 0;
+        }
         va_start(arg, format);
-        char temp[64];
-        char* buffer = temp;
-        size_t len = vsnprintf(temp, sizeof(temp), format, arg);
+        vsnprintf(buffer, len + 1, format, arg);
         va_end(arg);
-        if (len > sizeof(temp) - 1) {
-            buffer = new char[len + 1];
-            if (!buffer) {
-                return 0;
-            }
-            va_start(arg, format);
-            vsnprintf(buffer, len + 1, format, arg);
-            va_end(arg);
-        }
-        X=x;
-        Y=y;
-        len = write((const uint8_t*) buffer, len);
+    }
+    X = x;
+    Y = y;
+    len = write((const uint8_t*) buffer, len);
 
-        if (buffer != temp) {
-            delete[] buffer;
-        }
+    if (buffer != temp) {
+        delete[] buffer;
+    }
 
-        return len;
+    return len;
     //return 0;
 }
 
@@ -452,7 +471,7 @@ size_t OLED::write(const uint8_t* buffer, size_t len)
         // If two or more LF are consecutive, both are processed
         if (buffer[ix] == '\r') {
             //Serial.printf("n=%d r",ix);
-            X = 5;
+            X = 3;
             Y += (OLED_FONT_HEIGHT);
             if (buffer[ix + 1] == '\n') {
                 //Serial.print(" + n");Serial.println();
@@ -463,7 +482,7 @@ size_t OLED::write(const uint8_t* buffer, size_t len)
         }
         else if (buffer[ix] == '\n') {
             //Serial.printf("n=%d n",ix);
-            X = 5;
+            X = 3;
             Y += (OLED_FONT_HEIGHT);
             if (buffer[ix + 1] == '\r') {
                 //Serial.print(" + r");Serial.println();
@@ -475,24 +494,22 @@ size_t OLED::write(const uint8_t* buffer, size_t len)
         else if (*(buffer + ix) == '\f') {
             // FORM FEED
             scroll_up(height);
-            X = 5;
+            X = 3;
             Y = 0;
         }
         else {
             write(buffer[ix]);
         }
 
-            if (ttyMode)
-            {
-                // Scroll up if cursor position is out of screen
-                if (Y >= height)
-                {
-                    scroll_up(OLED_FONT_HEIGHT);
-                    Y=height-OLED_FONT_HEIGHT;
-                }
+        if (ttyMode) {
+            // Scroll up if cursor position is out of screen
+            if (Y >= height) {
+                scroll_up(OLED_FONT_HEIGHT);
+                Y = height - OLED_FONT_HEIGHT;
             }
+        }
     }
-        if (ttyMode) display();
+    if (ttyMode) display();
     return len;
 //    return 0;
 }
@@ -522,12 +539,12 @@ size_t OLED::write(uint8_t c)
 {
     //TODO write
     int n = 1;
-    n=draw_character(X,Y,c);
-            X+=OLED_FONT_WIDTH;
-            /*
-        }
-    */
-        return n;
+    n = draw_character(X, Y, c);
+    X += OLED_FONT_WIDTH;
+    /*
+     }
+     */
+    return n;
     //return 0;
 }
 

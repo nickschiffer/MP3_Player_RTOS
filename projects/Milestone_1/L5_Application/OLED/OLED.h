@@ -90,7 +90,7 @@ public:
     size_t write(uint8_t c);
     virtual ~OLED();
 private:
-    OLED(uint8_t i2c_address = 0x78, uint8_t width = 128, uint8_t height = 64);
+    OLED(uint8_t i2c_address = 0x78, uint8_t width = 134, uint8_t height = 64);
     uint_fast8_t width;
     uint_fast8_t height;
     uint_fast8_t i2c_address;
