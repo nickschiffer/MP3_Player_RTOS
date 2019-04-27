@@ -156,6 +156,7 @@ int main(void){
 
     mp3Decoder myPlayer;
 
+    //myPlayer.setDCS(HIGH);
     delay_ms(1000);
     if(! myPlayer.begin()) {
         printf("Could not initialize decoder!\n");
@@ -163,6 +164,8 @@ int main(void){
     } else {
         printf("Initialization successful!\n");
     }
+
+    myPlayer.sineTest(0x01, 3000);
 
     while(1);
 //    scheduler_add_task(new terminalTask(PRIORITY_HIGH));
