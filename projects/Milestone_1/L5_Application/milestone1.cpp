@@ -152,6 +152,8 @@ void vDirRead(void *pvParameters)
 
 
 int main(void){
+
+
     scheduler_add_task(new terminalTask(PRIORITY_HIGH));
     xTaskCreate(vDirRead, "DirRead", 2000,NULL,PRIORITY_LOW,NULL);
     scheduler_start();
