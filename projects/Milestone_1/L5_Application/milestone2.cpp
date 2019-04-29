@@ -15,6 +15,7 @@
 #include <tasks.hpp>
 #include <ff.h>
 #include <string.h>
+#include <str.hpp>
 #include <stdlib.h>
 #include <vector>
 #include <storage.hpp>
@@ -23,141 +24,103 @@
 #include <tuple>
 #include <MP3_DECODER/mp3decoder.h>
 
-//typedef struct {
-//    FILINFO info;
-//    std::string lname;
-//} song_info_t;
-//
-//std::vector<song_info_t> files;
-//
-//FRESULT getFilesFromSD(std::vector<song_info_t> *filinfo_vec)
-//{
-//    DIR Dir;
-//    FILINFO Finfo;
-//    FATFS *fs;
-//    FRESULT returnCode = FR_OK;
-//
-//    unsigned int fileBytesTotal = 0, numFiles = 0, numDirs = 0;
-//#if _USE_LFN
-//    char Lfname[_MAX_LFN];
-//#endif
-//    const char *dirPath = "1:";
-//    if (FR_OK != (returnCode = f_opendir(&Dir, dirPath))) {
-//        return FR_NO_PATH;
-//    }
-//
-//#if 0
-//    // Offset the listing
-//    while(lsOffset-- > 0) {
-//#if _USE_LFN
-//        Finfo.lfname = Lfname;
-//        Finfo.lfsize = sizeof(Lfname);
-//#endif
-//        if (FR_OK != f_readdir(&Dir, &Finfo)) {
-//            break;
-//        }
-//    }
-//#endif
-//
-//    for (;;) {
-//#if _USE_LFN
-//        Finfo.lfname = Lfname;
-//        Finfo.lfsize = sizeof(Lfname);
-//#endif
-//
-//        returnCode = f_readdir(&Dir, &Finfo);
-//        if ((FR_OK != returnCode) || !Finfo.fname[0]) {
-//            break;
-//        }
-//
-//        if (Finfo.fattrib & AM_DIR) {
-//            numDirs++;
-//        }
-//        else {
-//            numFiles++;
-//            fileBytesTotal += Finfo.fsize;
-//            std::string lname;
-//            lname += Finfo.lfname;
-//            song_info_t song = {Finfo, lname};
-//            filinfo_vec->push_back(song);
-//
-//        }
-//    }
-//
-//    return FR_OK;
-//}
-//
-//void vDirRead(void *pvParameters)
-//{
-//    auto oled = OLED::getInstance();
-//    oled->init();
-//    oled->clear();
-//    oled->display();
-//    while (1) {
-//        FRESULT res = getFilesFromSD(&files);
-//        if (res == FR_OK) {
-//            //printf("successfully read %d files\n", files.size());
-//            uint8_t i = 1, j = 1;
-//            oled->oprintf(5, 0, "Track Listing:\n");
-//            oled->draw_line(0, i * 8, 134, i * 8, OLED::tColor::WHITE);
-//            oled->display();
-//            i++;
-//            vTaskDelay(2000);
-//            for (song_info_t file : files) {
-//                if (strcasecmp(file.lname.c_str(), "") == 0){
-//                    //puts("no long name");
-//                    char *token = strtok(file.info.fname, "-");
-//                    oled->draw_line(0, i * 8, 134, i * 8, OLED::tColor::WHITE);
-//                    oled->display();
-//                    i++;
-//                    oled->oprintf(0,i++ * 8, " #:%d", j++);
-//                    oled->oprintf(0,i++ * 8, " Artist:");
-//                    oled->oprintf(0,i++ * 8, " %s ",token);
-//                    token = strtok(NULL,"-");
-//                    oled->oprintf(0,i++ * 8, " Track:");
-//                    oled->oprintf(0,i++ * 8, " %s ",token);
-//                    oled->oprintf(0,i++ * 8,"\n");
-//
-//                    //oled->oprintf(0, i * 8," #%d: %s", i, file.info.fname);
-//                }
-//                else {
-//                    char *token = strtok((char *)file.lname.c_str(), "-");
-//                    oled->draw_line(3, i * 8, 134, i * 8, OLED::tColor::WHITE);
-//                    oled->display();
-//                    i++;
-//                    oled->oprintf(0,i++ * 8, " #:%d", j++);
-//                    oled->oprintf(0,i++ * 8, " Artist:");
-//                    oled->oprintf(0,i++ * 8, " %s ",token);
-//                    token = strtok(NULL,"-");
-//                    oled->oprintf(0,i++ * 8, " Track:");
-//                    oled->oprintf(0,i++ * 8, " %s ",token);
-//                    oled->oprintf(0,i++ * 8,"\n");
-//                    //oled->oprintf(0, i * 8," #%d: %s", i, file.lname.c_str());
-//                }
-//                //i++;
-//                vTaskDelay(2000);
-//            }
-//
-//        }
-//        else {
-//            puts("file read error");
-//            oled->oprintf(0,0, "File Read Error");
-//        }
-//        oled->clear();
-//        oled->display();
-//        files.clear();
-//        vTaskDelay(2000);
-//    }
-//
-//}
+char term_songName[20];
+mp3Decoder myPlayer;
+const int BUFFERSIZE = 512;
+volatile bool isPlaying;
 
+TaskHandle_t xPause;
+SemaphoreHandle_t xReadSemaphore;
+QueueHandle_t xSongQueue;
+
+CMD_HANDLER_FUNC(playSong)
+{
+
+    if(cmdParams.getLen() > 12)
+    {
+
+        return false;
+    }
+    else
+    {
+        sprintf(term_songName, "1:%s", cmdParams.c_str());
+        xSemaphoreGive(xReadSemaphore);
+        return true;
+    }
+}
+
+CMD_HANDLER_FUNC(volume)
+{
+    int vol = 254 - (((100 * (100 - (int)cmdParams)) + (254 * (int)cmdParams)) / 100);
+    myPlayer.setVolume(vol, vol);
+
+    return true;
+}
+
+CMD_HANDLER_FUNC(stopSong)
+{
+    isPlaying = 0;
+    return true;
+}
+
+CMD_HANDLER_FUNC(pauseSong)
+{
+    vTaskSuspend(xPause);
+    return true;
+}
+
+CMD_HANDLER_FUNC(unpauseSong)
+{
+    vTaskResume(xPause);
+    return true;
+}
+
+void vReadSong (void *pvParameters) {
+
+    uint8_t songBuff[BUFFERSIZE] = {0};
+    FIL mySong;
+    UINT readBytes;
+
+    while(1) {
+        if(xSemaphoreTake(xReadSemaphore, portMAX_DELAY)) {
+           if(FR_NO_FILE == f_open(&mySong, term_songName, FA_READ)) {
+               puts("File not found!");
+           } else {
+               readBytes = BUFFERSIZE;
+               isPlaying = 1;
+               myPlayer.initSong();
+               while(! myPlayer.readyForData());
+               while(! (readBytes < BUFFERSIZE)) {
+                   if(!isPlaying) {
+                       break;
+                   }
+                   f_read(&mySong, songBuff, BUFFERSIZE, &readBytes);
+                   xQueueSend(xSongQueue, songBuff, portMAX_DELAY);
+               }
+               f_close(&mySong);
+           }
+
+        }
+    }
+}
+
+void vPlaySong (void *pvParameters) {
+
+    uint8_t songBuff[BUFFERSIZE];
+    while(1) {
+        xQueueReceive(xSongQueue, songBuff, portMAX_DELAY);
+
+        myPlayer.sendData(songBuff, BUFFERSIZE);
+        vTaskDelay(15);
+    }
+}
 
 int main(void){
 
-    mp3Decoder myPlayer;
+    xReadSemaphore = xSemaphoreCreateBinary();
+    xSongQueue = xQueueCreate(1, BUFFERSIZE);
 
-    //myPlayer.setDCS(HIGH);
-    delay_ms(1000);
+
     if(! myPlayer.begin()) {
         printf("Could not initialize decoder!\n");
 
@@ -165,11 +128,11 @@ int main(void){
         printf("Initialization successful!\n");
     }
 
-    myPlayer.sineTest(0x01, 3000);
+    //myPlayer.sineTest(0x01, 1000);
 
-    while(1);
-//    scheduler_add_task(new terminalTask(PRIORITY_HIGH));
-//    xTaskCreate(vDirRead, "DirRead", 2000,NULL,PRIORITY_LOW,NULL);
-//    scheduler_start();
+    scheduler_add_task(new terminalTask(PRIORITY_HIGH));
+    xTaskCreate(vReadSong, "SongRead", 2048, NULL, PRIORITY_LOW, &xPause);
+    xTaskCreate(vPlaySong, "SongPlay", 2048, NULL, PRIORITY_MEDIUM, NULL);
+    scheduler_start();
     return -1;
 }

@@ -61,9 +61,10 @@ public:
     void reset(void);
     void setVolume(uint8_t left, uint8_t right);
     void setDCS(SetBit s);
-    void sendData(uint8_t *buffer, uint8_t buffersize);
+    void sendData(uint8_t *buffer, uint16_t buffersize);
     bool readyForData();
     void sineTest(uint8_t n, uint16_t ms);
+    void initSong();
 
 
 private:

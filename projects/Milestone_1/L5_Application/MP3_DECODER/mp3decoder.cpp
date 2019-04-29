@@ -50,7 +50,7 @@ void mp3Decoder::reset(void)
     delay_ms(200);
 
     sciWrite(VS1053_REG_CLOCKF, 0x6000);
-    setVolume(0x10, 0x10);
+    setVolume(0x20, 0x20);
 }
 
 uint16_t mp3Decoder::sciRead(uint8_t addr)
@@ -79,6 +79,26 @@ void mp3Decoder::sciWrite(uint8_t addr, uint16_t data)
     cs_.setHigh();
 }
 
+void mp3Decoder::initSong()
+{
+    sciWrite(VS1053_REG_MODE, VS1053_MODE_SM_LINE1 | VS1053_MODE_SM_SDINEW);
+    sciWrite(VS1053_REG_WRAMADDR, 0xC017);
+    sciWrite(VS1053_REG_WRAM, 3);
+    sciWrite(VS1053_REG_WRAMADDR, 0xC019);
+    sciWrite(VS1053_REG_WRAM, 0);
+    sciWrite(VS1053_REG_DECODETIME, 0x00);
+    sciWrite(VS1053_REG_DECODETIME, 0x00);
+}
+
+void mp3Decoder::setDCS(SetBit s)
+{
+    if (!s) {
+        xdcs_.setLow();
+    } else {
+        xdcs_.setHigh();
+    }
+}
+
 void mp3Decoder::setVolume(uint8_t left, uint8_t right)
 {
     uint16_t vol;
@@ -89,11 +109,24 @@ void mp3Decoder::setVolume(uint8_t left, uint8_t right)
     sciWrite(VS1053_REG_VOLUME, vol);
 }
 
-void mp3Decoder::sendData(uint8_t *buffer, uint8_t buffsize)
+void mp3Decoder::sendData(uint8_t *buffer, uint16_t buffsize)
 {
+    while(! readyForData());
     xdcs_.setLow();
 
+//    for(uint8_t i = 0; i < buffsize; i++) {
+//        //printf("%x\n", buffer[i]);
+//        SPI.transfer(buffer[i]);
+//    }
+    //printf("End of chunk\n");
+
     while (buffsize--) {
+        //printf("%d\n", buffsize);
+        //printf("%x\n", buffer[0]);
+        if((buffsize % 32) == 0)
+        {
+            while(! readyForData());
+        }
         SPI.transfer(buffer[0]);
         buffer++;
     }
