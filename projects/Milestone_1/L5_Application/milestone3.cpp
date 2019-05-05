@@ -23,14 +23,18 @@
 #include <OLED/OLED.h>
 #include <tuple>
 #include <MP3_DECODER/mp3decoder.h>
+#include <eint.h>
 
 char term_songName[20];
 mp3Decoder myPlayer;
 const int BUFFERSIZE = 512;
 volatile bool isPlaying;
+volatile bool ff;
+volatile bool stop;
 
 TaskHandle_t xPause;
 SemaphoreHandle_t xReadSemaphore;
+SemaphoreHandle_t xPauseSemaphore;
 QueueHandle_t xSongQueue;
 QueueHandle_t xvolumeQueue;
 
@@ -60,13 +64,7 @@ CMD_HANDLER_FUNC(volume)
 
 CMD_HANDLER_FUNC(stopSong)
 {
-    isPlaying = 0;
-    return true;
-}
-
-CMD_HANDLER_FUNC(pauseSong)
-{
-    vTaskSuspend(xPause);
+    stop = 1;
     return true;
 }
 
@@ -74,6 +72,20 @@ CMD_HANDLER_FUNC(unpauseSong)
 {
     vTaskResume(xPause);
     return true;
+}
+
+void xPauseSong( void ) {
+
+    if(isPlaying) {
+        isPlaying = 0;
+    }
+    else {
+        xSemaphoreGive(xPauseSemaphore);
+    }
+}
+
+void xFastForward( void ) {
+    ff = 1;
 }
 
 void vReadSong (void *pvParameters) {
@@ -89,10 +101,19 @@ void vReadSong (void *pvParameters) {
            } else {
                readBytes = BUFFERSIZE;
                isPlaying = 1;
-               //myPlayer.initSong();
+               ff = 0;
+               stop = 0;
                while(! myPlayer.readyForData());
                while(! (readBytes < BUFFERSIZE)) {
                    if(!isPlaying) {
+                       xSemaphoreTake(xPauseSemaphore, portMAX_DELAY);
+                       isPlaying = 1;
+                   }
+                   if(ff) {
+                       f_lseek(&mySong, f_tell(&mySong) + 51200);
+                       ff = 0;
+                   }
+                   if(stop) {
                        break;
                    }
                    f_read(&mySong, songBuff, BUFFERSIZE, &readBytes);
@@ -126,9 +147,11 @@ void vPlaySong (void *pvParameters) {
 int main(void){
 
     xReadSemaphore = xSemaphoreCreateBinary();
+    xPauseSemaphore = xSemaphoreCreateBinary();
     xvolumeQueue = xQueueCreate(1, sizeof(int));
     xSongQueue = xQueueCreate(1, BUFFERSIZE);
 
+    eint3_enable_port2(0, eint_rising_edge, xFastForward);
 
     if(! myPlayer.begin()) {
         printf("Could not initialize decoder!\n");

@@ -50,6 +50,7 @@ void mp3Decoder::reset(void)
     delay_ms(200);
 
     sciWrite(VS1053_REG_CLOCKF, 0x6000);
+    //  sciWrite(VS1053_REG_BASS, sciRead(VS1053_REG_BASS) | (15 << 4));
     setVolume(0x20, 0x20);
 }
 

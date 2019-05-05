@@ -117,8 +117,8 @@ bool terminalTask::taskEntry()
     CMD_HANDLER_FUNC(stopSong);
     cp.addHandler(stopSong, "stop");
 
-    CMD_HANDLER_FUNC(pauseSong);
-    cp.addHandler(pauseSong, "pause");
+//    CMD_HANDLER_FUNC(pauseSong);
+//    cp.addHandler(pauseSong, "pause");
 
     CMD_HANDLER_FUNC(unpauseSong);
     cp.addHandler(unpauseSong, "unpause");
