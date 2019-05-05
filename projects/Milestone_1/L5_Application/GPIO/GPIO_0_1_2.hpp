@@ -1,9 +1,16 @@
-#ifndef LABGPIO_H
-#define LABGPIO_H
+/*
+ * Nickolas Schiffer #012279319
+ * CMPE 146 LED Switch
+ */
+
+
+
+#ifndef GPIO_H
+#define GPIO_H
 
 #include <stdint.h>
 
-class LabGPIO_0_1_2 {
+class GPIO_0_1_2 {
 private:
     /**
      * port, pin and any other variables should be placed here.
@@ -21,7 +28,7 @@ public:
      *
      * @param {uint8_t} pin  - pin number between 0 and 32
      */
-    LabGPIO_0_1_2(uint8_t port, uint8_t pin);
+    GPIO_0_1_2(uint8_t port, uint8_t pin);
     /**
      * Should alter the hardware registers to set the pin as an input
      */
@@ -57,7 +64,8 @@ public:
      * @return {bool} level of pin high => true, low => false
      */
     bool getLevel();
-    ~LabGPIO_0_1_2();
+    void setPulldown();
+    ~GPIO_0_1_2();
 };
 
 #endif

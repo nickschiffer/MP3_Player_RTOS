@@ -23,7 +23,8 @@
 #include <OLED/OLED.h>
 #include <tuple>
 #include <MP3_DECODER/mp3decoder.h>
-#include <eint.h>
+#include <GPIO/GPIOInterrupt.hpp>
+#include <GPIO/GPIO_0_1_2.hpp>
 
 char term_songName[20];
 mp3Decoder myPlayer;
@@ -37,6 +38,11 @@ SemaphoreHandle_t xReadSemaphore;
 SemaphoreHandle_t xPauseSemaphore;
 QueueHandle_t xSongQueue;
 QueueHandle_t xvolumeQueue;
+
+void Eint3Handler(){
+    GPIOInterrupt *interruptHandler = GPIOInterrupt::getInstance();
+    interruptHandler->HandleInterrupt();
+}
 
 CMD_HANDLER_FUNC(playSong)
 {
@@ -151,7 +157,14 @@ int main(void){
     xvolumeQueue = xQueueCreate(1, sizeof(int));
     xSongQueue = xQueueCreate(1, BUFFERSIZE);
 
-    eint3_enable_port2(0, eint_rising_edge, xFastForward);
+    auto pp_button = GPIO_0_1_2(2, 0);
+    pp_button.setAsInput();
+    pp_button.setPulldown();
+    GPIOInterrupt *gpio_interrupts = GPIOInterrupt::getInstance();
+    gpio_interrupts->Initialize();
+    gpio_interrupts->AttachInterruptHandler(2, 0, (IsrPointer)xPauseSong, kRisingEdge);
+    //gpio_interrupts->AttachInterruptHandler(0, 0, (IsrPointer)vSemaphore2Supplier, kRisingEdge);
+    isr_register(EINT3_IRQn, Eint3Handler);
 
     if(! myPlayer.begin()) {
         printf("Could not initialize decoder!\n");

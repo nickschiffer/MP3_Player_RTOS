@@ -7,10 +7,15 @@
 #include <MP3_DECODER/mp3decoder.h>
 #include <stdio.h>
 
-GPIO cs_(P0_0);
-GPIO dreq_(P0_1);
-GPIO xdcs_(P0_29);
-GPIO reset_(P0_30);
+//GPIO cs_(P0_0);
+//GPIO dreq_(P0_1);
+//GPIO xdcs_(P0_29);
+//GPIO reset_(P0_30);
+
+auto cs_ = GPIO_0_1_2(0, 0);
+auto dreq_ = GPIO_0_1_2(0, 1);
+auto xdcs_ = GPIO_0_1_2(0, 29);
+auto reset_ = GPIO_0_1_2(0, 30);
 
 mp3Decoder::mp3Decoder()
 {
@@ -170,5 +175,5 @@ void mp3Decoder::sineTest(uint8_t n, uint16_t ms)
 
 bool mp3Decoder::readyForData()
 {
-    return dreq_.read();
+    return dreq_.getLevel();
 }

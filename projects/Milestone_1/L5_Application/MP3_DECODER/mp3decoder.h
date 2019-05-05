@@ -11,7 +11,7 @@
 #include <SPI/LabSpi.hpp>
 #include <ff.h>
 #include <io.hpp>
-#include <gpio.hpp>
+#include <GPIO/GPIO_0_1_2.hpp>
 #include <utilities.h>
 
 #define VS1053_FILEPLAYER_PIN_INT 5
