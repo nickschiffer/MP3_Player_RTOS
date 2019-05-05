@@ -517,6 +517,8 @@ size_t OLED::write(const uint8_t* buffer, size_t len)
 void OLED::setCursor(uint_fast8_t x, uint_fast8_t y)
 {
     //TODO setCursor
+    X = x;
+    Y = x;
 }
 
 bool OLED::sendCommand(uint8_t command)

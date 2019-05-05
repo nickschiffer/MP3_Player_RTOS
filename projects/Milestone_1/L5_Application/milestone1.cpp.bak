@@ -20,7 +20,6 @@
 #include <storage.hpp>
 #include <i2c2.hpp>
 #include <OLED/OLED.h>
-#include <tuple>
 
 typedef struct {
     FILINFO info;
