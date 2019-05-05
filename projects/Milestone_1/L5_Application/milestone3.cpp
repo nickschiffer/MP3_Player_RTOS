@@ -24,6 +24,8 @@
 #include <tuple>
 #include <MP3_DECODER/mp3decoder.h>
 #include <eint.h>
+#include <GPIO/GPIOInterrupt.hpp>
+#include <GPIO/GPIO_0_1_2.hpp>
 
 char term_songName[20];
 mp3Decoder myPlayer;
@@ -45,6 +47,11 @@ typedef struct {
 } song_t;
 
 std::vector<song_t> songs;
+
+void Eint3Handler(){
+    GPIOInterrupt *interruptHandler = GPIOInterrupt::getInstance();
+    interruptHandler->HandleInterrupt();
+}
 
 FRESULT getFilesFromSD(std::vector<song_t> *song_vec)
 {
@@ -308,18 +315,27 @@ int main(void){
     xvolumeQueue = xQueueCreate(1, sizeof(int));
     xSongQueue = xQueueCreate(1, BUFFERSIZE);
 
+    auto pp_button = GPIO_0_1_2(2, 0);
+    pp_button.setAsInput();
+    pp_button.setPulldown();
+    GPIOInterrupt *gpio_interrupts = GPIOInterrupt::getInstance();
+    gpio_interrupts->Initialize();
+    gpio_interrupts->AttachInterruptHandler(2, 0, (IsrPointer)xPauseSong, kRisingEdge);
+    //gpio_interrupts->AttachInterruptHandler(0, 0, (IsrPointer)vSemaphore2Supplier, kRisingEdge);
+    isr_register(EINT3_IRQn, Eint3Handler);
+
     getFilesFromSD(&songs);
 
     //eint3_enable_port2(0, eint_rising_edge, xFastForward);
 
-//    if(! myPlayer.begin()) {
-//        printf("Could not initialize decoder!\n");
-//
-//    } else {
-//        printf("Initialization successful!\n");
-//    }
-//
-//    myPlayer.sineTest(0x01, 1000);
+    if(! myPlayer.begin()) {
+        printf("Could not initialize decoder!\n");
+
+    } else {
+        printf("Initialization successful!\n");
+    }
+
+    myPlayer.sineTest(0x01, 1000);
 
     scheduler_add_task(new terminalTask(PRIORITY_HIGH));
     //xTaskCreate(vReadSong, "SongRead", 2048, NULL, PRIORITY_LOW, &xPause);
