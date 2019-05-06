@@ -23,7 +23,7 @@ mp3Decoder::mp3Decoder()
 
 bool mp3Decoder::begin(void)
 {
-    SPI.initialize(8, LabSpi::tSPI, 16);
+    SPI.initialize(8, LabSpi::tSPI, 32);
     cs_.setAsOutput();
     cs_.setHigh();
     xdcs_.setAsOutput();
@@ -56,7 +56,7 @@ void mp3Decoder::reset(void)
 
     sciWrite(VS1053_REG_CLOCKF, 0x6000);
     //  sciWrite(VS1053_REG_BASS, sciRead(VS1053_REG_BASS) | (15 << 4));
-    setVolume(0x20, 0x20);
+    //setVolume(0x20, 0x20);
 }
 
 uint16_t mp3Decoder::sciRead(uint8_t addr)

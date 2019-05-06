@@ -34,10 +34,11 @@ const int BUFFERSIZE = 512;
 volatile bool isPlaying = false;
 volatile bool ff;
 volatile bool stop;
+volatile uint8_t vol = 40;
 
 //auto adc = LabAdc();
-LabAdc::ADC_Channel pot_channel = LabAdc::channel_3;
-LabAdc::Pin pot_pin             = LabAdc::k0_26;
+//LabAdc::ADC_Channel pot_channel = LabAdc::channel_3;
+//LabAdc::Pin pot_pin             = LabAdc::k0_26;
 
 TaskHandle_t      xPause;
 TaskHandle_t      xNowPlayingHandle;
@@ -47,11 +48,12 @@ SemaphoreHandle_t xPauseSemaphore;
 QueueHandle_t     xSongQueue;
 QueueHandle_t     xVolumeQueue;
 QueueHandle_t     xREQueue;
+SemaphoreHandle_t xPlayScreen;
 
 auto play_pause_button    = GPIO_0_1_2(2, 0);
 auto prev_track_button    = GPIO_0_1_2(2, 1);
 auto next_track_button    = GPIO_0_1_2(2, 2);
-//auto screen_toggle_button = GPIO_0_1_2(2, 3);
+auto screen_toggle_button = GPIO_0_1_2(2, 3);
 auto re_clk               = GPIO_0_1_2(2, 4);
 auto re_data              = GPIO_0_1_2(2, 5);
 auto select_button        = GPIO_0_1_2(2, 6);
@@ -193,9 +195,9 @@ CMD_HANDLER_FUNC(playSong)
 
 CMD_HANDLER_FUNC(volume)
 {
-    int vol = (int)cmdParams;
-    xQueueSend(xVolumeQueue, &vol, portMAX_DELAY);
-
+//    int vol = (int)cmdParams;
+//    xQueueSend(xVolumeQueue, &vol, portMAX_DELAY);
+//
     return true;
 }
 
@@ -216,31 +218,43 @@ bool lastclock = 0;
 void xRead_RE(void){
     //re_clk
     //printf("interrupt at: %lu\n", xTaskGetMsCount());
+    bool clock_value = re_clk.getLevel();
+    bool data_value = re_data.getLevel();
+    if (lastclock != clock_value){
+        lastclock = clock_value;
+        if(menu_state == kMENU) {
+            if (clock_value != data_value){
+                re_state_t state = kLEFT_TURN;
+                xQueueSend(xREQueue, &state, 0);
+            }
+            else {
+                re_state_t state = kRIGHT_TURN;
+                xQueueSend(xREQueue, &state, 0);
+            }
+        } else if(menu_state == kNOW_PLAYING) {
+            if (clock_value != data_value){
+                re_state_t state = kLEFT_TURN;
+                xQueueSend(xVolumeQueue, &state, 0);
+            }
+            else {
+                re_state_t state = kRIGHT_TURN;
+                xQueueSend(xVolumeQueue, &state, 0);
+            }
+        }
+        return;
+    }
+    return;
+
 //    bool clock_value = re_clk.getLevel();
-//    if (lastclock != clock_value){
-//        lastclock = clock_value;
-//
-//        if (clock_value != re_data.getLevel()){
-//            re_state_t state = kRIGHT_TURN;
-//            xQueueSend(xREQueue, &state, 0);
-//        }
-//        else {
-//            re_state_t state = kLEFT_TURN;
-//            xQueueSend(xREQueue, &state, 0);
-//        }
-//        return;
+//    bool data_value = re_data.getLevel();
+//    if (data_value != clock_value) {
+//        re_state_t state = kLEFT_TURN;
+//        xQueueSend(xREQueue, &state, 0);
 //    }
-//    return;
-
-
-    if (re_data.getLevel() != re_clk.getLevel()) {
-        re_state_t state = kLEFT_TURN;
-        xQueueSend(xREQueue, &state, 0);
-    }
-    else {
-        re_state_t state = kRIGHT_TURN;
-        xQueueSend(xREQueue, &state, 0);
-    }
+//    else {
+//        re_state_t state = kRIGHT_TURN;
+//        xQueueSend(xREQueue, &state, 0);
+//    }
     //re_button
 }
 
@@ -260,26 +274,31 @@ void xRead_Select_button(void){
 void xNextTrack(void){
     selected_song = (selected_song + 1) % songs.size();
     xSemaphoreGive(xReadSemaphore);
+    if(menu_state == kNOW_PLAYING)
+        xSemaphoreGive(xPlayScreen);
 }
 
 void xPrevTrack(void){
     selected_song = (selected_song > 0) ? selected_song - 1 : songs.size() - 1;
     xSemaphoreGive(xReadSemaphore);
+    if(menu_state == kNOW_PLAYING)
+        xSemaphoreGive(xPlayScreen);
 }
 
 void xScreenToggle(void){
     if (menu_state == kMENU){
-        vTaskSuspend(xMenuHandle);
-        vTaskResume(xNowPlayingHandle);
+        //vTaskSuspend(xMenuHandle);
+        //vTaskResume(xNowPlayingHandle);
+        xSemaphoreGive(xPlayScreen);
         menu_state = kNOW_PLAYING;
     }
     else if (menu_state == kNOW_PLAYING){
         menu_state = kMENU;
-        vTaskResume(xMenuHandle);
-        vTaskSuspend(xNowPlayingHandle);
+        //vTaskResume(xMenuHandle);
+        //vTaskSuspend(xNowPlayingHandle);
         re_state_t state = kNOTHING;
         xQueueSendFromISR(xREQueue, &state, 0);
-        xQueueSendFromISR(xREQueue, &state, 0);
+        //xQueueSendFromISR(xREQueue, &state, 0);
     }
 
     return;
@@ -390,29 +409,45 @@ inline float map(float x, float in_min, float in_max, float out_min, float out_m
 
 void vPlaySong (void *pvParameters) {
 
-    auto adc = LabAdc();
-    adc.AdcInitBurstMode();
-    adc.AdcSelectPin(pot_pin);
-    int volume = 254, volume_prev = 254;
-    int counter = 0;
+//    auto adc = LabAdc();
+//    adc.AdcInitBurstMode();
+//    adc.AdcSelectPin(pot_pin);
+
+
+    //= 254, volume_prev = 254;
+    //int counter = 0;
+    re_state_t re_state = kLEFT_TURN;
     uint8_t songBuff[BUFFERSIZE];
 
     while(1) {
-//        if(xQueueReceive(xVolumeQueue, &volume, 0)) {
-//            printf("%d\n", volume);
-//            int vol = 254 - (((100 * (100 - (int)volume)) + (254 * (int)volume)) / 100);
-//            myPlayer.setVolume(vol, vol);
-//        }
-        if (counter++ == 50){
-            counter = 0;
-            auto voltage = adc.ReadAdcVoltageByChannel(pot_channel);
-            volume = (int)map(adc.ReadAdcVoltageByChannel(pot_channel), 0, 3.3, 80, 0);
-            //printf("setting volume to %d\n", volume);
-            if (volume != volume_prev){
-                myPlayer.setVolume(volume, volume);
-                volume_prev = volume;
+        if(xQueueReceive(xVolumeQueue, &re_state, 0)) {
+            printf("%d\n", vol);
+            //volume = (int)map(volume, 0, 100, 80, 0);
+            if(re_state == kLEFT_TURN) {
+                //printf("Turned down\n");
+                if(vol < 100)
+                    vol += 5;
+                myPlayer.setVolume(vol, vol);
             }
+            else if(re_state == kRIGHT_TURN) {
+                //printf("Turned up\n");
+                if (vol > 0)
+                    vol -= 5;
+                myPlayer.setVolume(vol, vol);
+            }
+            //int vol = 254 - (((100 * (100 - (int)volume)) + (254 * (int)volume)) / 100);
+
         }
+//        if (counter++ == 20){
+//            counter = 0;
+//            volume = adc.ReadAdcVoltageByChannel(pot_channel);
+//            volume = (int)map(adc.ReadAdcVoltageByChannel(pot_channel), 0, 3.3, 80, 0);
+//            //printf("setting volume to %d\n", volume);
+//            if (volume != volume_prev){
+//                myPlayer.setVolume(volume, volume);
+//                volume_prev = volume;
+//            }
+//        }
 
        // if (xQueueReceive())
 
@@ -466,7 +501,7 @@ void vMenuScreen(void *pvParameters){
 
     while(1){
 
-        if (xQueueReceive(xREQueue, &re_state, 100)){
+        if (xQueueReceive(xREQueue, &re_state, portMAX_DELAY)){
             switch(re_state) {
                 case kLEFT_TURN:
                     //puts("left turn received");
@@ -487,16 +522,16 @@ void vMenuScreen(void *pvParameters){
                 default:
                     break;
             }
-            puts("hit test case\n");
+            //puts("hit test case\n");
             oled = OLED::getInstance();
             oled->clear();
-            puts("hit test case2\n");
+            //puts("hit test case2\n");
             oled->display();
             i = 0;
             oled->draw_line(0, i, 134, i, OLED::tColor::WHITE);
-            puts("got to 473\n");
+            //puts("got to 473\n");
             oled->display();
-            puts("got to 475\n");
+            //puts("got to 475\n");
             i++;
             oled->oprintf(0,i++ * 8, " Track #:%d", song_cursor);
             oled->oprintf(0,i++ * 8, " Artist:");
@@ -521,7 +556,7 @@ void vMenuScreen(void *pvParameters){
 }
 
 void vNowPlayingScreen(void *pvParameters){
-    vTaskSuspend(NULL);
+    //vTaskSuspend(NULL);
     auto oled = OLED::getInstance();
     //oled->init();
     oled->clear();
@@ -532,6 +567,7 @@ void vNowPlayingScreen(void *pvParameters){
 
     while(1){
         //if ((int)selected_song != previous_track){
+            xSemaphoreTake(xPlayScreen, portMAX_DELAY);
             i = 0;
             oled->draw_line(0, i, 134, i, OLED::tColor::WHITE);
             oled->display();
@@ -562,6 +598,7 @@ int main(void){
 
     xReadSemaphore  = xSemaphoreCreateBinary();
     xPauseSemaphore = xSemaphoreCreateBinary();
+    xPlayScreen     = xSemaphoreCreateBinary();
     xVolumeQueue    = xQueueCreate(1, sizeof(int));
     xSongQueue      = xQueueCreate(1, BUFFERSIZE);
     xREQueue        = xQueueCreate(2, sizeof(re_state_t));
@@ -577,8 +614,8 @@ int main(void){
     next_track_button.setAsInput();
     next_track_button.setPulldown();
 
-//    screen_toggle_button.setAsInput();
-//    screen_toggle_button.setPulldown();
+    screen_toggle_button.setAsInput();
+    screen_toggle_button.setPulldown();
 
     re_clk.setAsInput();
     //re_clk.setPulldown();
@@ -595,11 +632,11 @@ int main(void){
     GPIOInterrupt *gpio_interrupts = GPIOInterrupt::getInstance();
     gpio_interrupts->Initialize();
     gpio_interrupts->AttachInterruptHandler(2, 0, (IsrPointer)xPauseSong, kRisingEdge);
-    gpio_interrupts->AttachInterruptHandler(2, 4, (IsrPointer)xRead_RE, kFallingEdge);
+    gpio_interrupts->AttachInterruptHandler(2, 4, (IsrPointer)xRead_RE, kBothEdges);
     gpio_interrupts->AttachInterruptHandler(2, 6, (IsrPointer)xRead_Select_button, kRisingEdge);
     gpio_interrupts->AttachInterruptHandler(2, 1, (IsrPointer)xPrevTrack, kRisingEdge);
     gpio_interrupts->AttachInterruptHandler(2, 2, (IsrPointer)xNextTrack, kRisingEdge);
-    //gpio_interrupts->AttachInterruptHandler(2, 3, (IsrPointer)xScreenToggle, kRisingEdge);
+    gpio_interrupts->AttachInterruptHandler(2, 3, (IsrPointer)xScreenToggle, kRisingEdge);
     //gpio_interrupts->AttachInterruptHandler(0, 0, (IsrPointer)vSemaphore2Supplier, kRisingEdge);
     isr_register(EINT3_IRQn, Eint3Handler);
 
@@ -614,14 +651,15 @@ int main(void){
         printf("Initialization successful!\n");
     }
 
-    myPlayer.sineTest(0x01, 1000);
+    myPlayer.setVolume(vol, vol);
+    //myPlayer.sineTest(0x01, 1000);
 
     scheduler_add_task(new terminalTask(PRIORITY_HIGH));
     xTaskCreate(vReadSongNew, "SongRead", 2000, NULL, PRIORITY_LOW, NULL);
     xTaskCreate(vPlaySong, "SongPlay", 2000, NULL, PRIORITY_MEDIUM, NULL);
     //xTaskCreate(vPopulateSongs, "Get Songs", 4000, NULL, PRIORITY_LOW, NULL);
-    xTaskCreate(vMenuScreen, "Menu Screen", 6000, NULL, PRIORITY_LOW, &xMenuHandle);
-    //xTaskCreate(vNowPlayingScreen, "Now Playing Screen", 1024, NULL, PRIORITY_LOW, &xNowPlayingHandle);
+    xTaskCreate(vMenuScreen, "Menu Screen", 512, NULL, PRIORITY_LOW, &xMenuHandle);
+    xTaskCreate(vNowPlayingScreen, "Now Playing Screen", 512, NULL, PRIORITY_LOW, &xNowPlayingHandle);
     scheduler_start();
     return -1;
 }
