@@ -65,6 +65,7 @@ public:
      */
     bool getLevel();
     void setPulldown();
+    void setPullup();
     ~GPIO_0_1_2();
 };
 

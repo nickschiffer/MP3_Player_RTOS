@@ -265,6 +265,55 @@ void GPIO_0_1_2::setPulldown()
         }
 }
 
+void GPIO_0_1_2::setPullup()
+{
+    //GPIO Selection, gets kind of messy
+        switch (port) {
+            case 0: {
+                if ((pin >= 0) && (pin <= 11)){
+                    LPC_PINCON->PINMODE0 &= ~(3 << (pin * 2));
+                }
+                else if (pin == 15){
+                    LPC_PINCON->PINMODE0 &= ~(3 << 30);
+                }
+                else if ((pin >= 16) && (pin <= 30)) {
+                    LPC_PINCON->PINMODE1 &= ~(3 << ((pin - 16) * 2));
+                }
+                else break;
+                break;
+            }
+            case 1: {
+                if ((pin >= 0) && (pin <= 1)){
+                    LPC_PINCON->PINMODE2 &= ~(3 << (pin * 2));
+                }
+                else if (pin == 4){
+                    LPC_PINCON->PINMODE2 &= ~(3 << 8);
+                }
+                else if ((pin >= 8) && (pin <= 10)){
+                    LPC_PINCON->PINMODE2 &= ~(3 << (pin * 2));
+                }
+                else if ((pin >= 14) && (pin <= 15)){
+                    LPC_PINCON->PINMODE2 &= ~(3 << (pin * 2));
+                }
+                else if ((pin >= 16) && (pin <= 31)){
+                    LPC_PINCON->PINMODE3 &= ~(3 << ((pin - 16) * 2));
+                }
+                else break;
+                break;
+            }
+            case 2: {
+                if ((pin >= 0) && (pin <= 13)){
+                    LPC_PINCON->PINMODE4 &= ~(3 << (pin * 2));
+                }
+                else break;
+                break;
+            }
+
+            default:
+                break;
+        }
+}
+
 
 GPIO_0_1_2::~GPIO_0_1_2()
 {
