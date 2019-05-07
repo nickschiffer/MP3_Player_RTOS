@@ -1,5 +1,5 @@
 /*
- *  Nickolas Schiffer
+ *  Nickolas Schiffer & Chad Palmer
  *  CMPE 146 S19
  *  MP3 Project Milestone 1 (OLED & Filename enumeration)
  */
@@ -28,17 +28,14 @@
 #include <GPIO/GPIO_0_1_2.hpp>
 #include <ADC/adcDriver.hpp>
 
-//char term_songName[20];
 mp3Decoder myPlayer;
 const int BUFFERSIZE = 512;
 volatile bool isPlaying = false;
 volatile bool ff;
-volatile bool stop;
+volatile bool rw;
+volatile bool stop = 1;
+volatile bool isPN = 0;
 volatile uint8_t vol = 40;
-
-//auto adc = LabAdc();
-//LabAdc::ADC_Channel pot_channel = LabAdc::channel_3;
-//LabAdc::Pin pot_pin             = LabAdc::k0_26;
 
 TaskHandle_t      xPause;
 TaskHandle_t      xNowPlayingHandle;
@@ -60,8 +57,7 @@ auto select_button        = GPIO_0_1_2(2, 6);
 
 unsigned int selected_song = 0;
 unsigned int song_cursor   = 0;
-
-
+volatile unsigned int menu_counter = 0;
 
 typedef struct {
     FILINFO info;
@@ -86,8 +82,6 @@ typedef enum {
 
 menu_state_t menu_state = kMENU;
 
-//re_state_t state = 0;
-
 std::vector<song_t> songs;
 
 void Eint3Handler(){
@@ -99,7 +93,7 @@ FRESULT getFilesFromSD(std::vector<song_t> *song_vec)
 {
     DIR Dir;
     FILINFO Finfo;
-    FATFS *fs;
+//    FATFS *fs;
     FRESULT returnCode = FR_OK;
 
     unsigned int fileBytesTotal = 0, numFiles = 0, numDirs = 0;
@@ -175,49 +169,9 @@ FRESULT getFilesFromSD(std::vector<song_t> *song_vec)
     return FR_OK;
 }
 
-CMD_HANDLER_FUNC(playSong)
-{
-
-//    if(cmdParams.getLen() > 12)
-//    {
-//
-//        return false;
-//    }
-//    else
-//    {
-//        sprintf(term_songName, "1:%s", cmdParams.c_str());
-//        xSemaphoreGive(xReadSemaphore);
-//        return true;
-//    }
-    return true;
-    //TODO remove this
-}
-
-CMD_HANDLER_FUNC(volume)
-{
-//    int vol = (int)cmdParams;
-//    xQueueSend(xVolumeQueue, &vol, portMAX_DELAY);
-//
-    return true;
-}
-
-CMD_HANDLER_FUNC(stopSong)
-{
-    stop = 1;
-    return true;
-}
-
-CMD_HANDLER_FUNC(unpauseSong)
-{
-    vTaskResume(xPause);
-    return true;
-}
-
 bool lastclock = 0;
 
 void xRead_RE(void){
-    //re_clk
-    //printf("interrupt at: %lu\n", xTaskGetMsCount());
     bool clock_value = re_clk.getLevel();
     bool data_value = re_data.getLevel();
     if (lastclock != clock_value){
@@ -232,40 +186,34 @@ void xRead_RE(void){
                 xQueueSend(xREQueue, &state, 0);
             }
         } else if(menu_state == kNOW_PLAYING) {
-            if (clock_value != data_value){
-                re_state_t state = kLEFT_TURN;
-                xQueueSend(xVolumeQueue, &state, 0);
-            }
-            else {
-                re_state_t state = kRIGHT_TURN;
-                xQueueSend(xVolumeQueue, &state, 0);
+            if(!select_button.getLevel()) {
+                if (clock_value != data_value){
+                    rw = 1;
+                }
+                else {
+                    ff = 1;
+                }
+            } else {
+                if (clock_value != data_value){
+                    re_state_t state = kLEFT_TURN;
+                    xQueueSend(xVolumeQueue, &state, 0);
+                }
+                else {
+                    re_state_t state = kRIGHT_TURN;
+                    xQueueSend(xVolumeQueue, &state, 0);
+                }
             }
         }
         return;
     }
     return;
-
-//    bool clock_value = re_clk.getLevel();
-//    bool data_value = re_data.getLevel();
-//    if (data_value != clock_value) {
-//        re_state_t state = kLEFT_TURN;
-//        xQueueSend(xREQueue, &state, 0);
-//    }
-//    else {
-//        re_state_t state = kRIGHT_TURN;
-//        xQueueSend(xREQueue, &state, 0);
-//    }
-    //re_button
 }
 
 void xRead_Select_button(void){
     if (menu_state == kMENU){
-        //song selected
         selected_song = song_cursor;
         xSemaphoreGive(xReadSemaphore);
-//        if (!isPlaying)
-//            isPlaying = true;
-        printf("song selected: %d\n", selected_song);
+        menu_counter = 0;
     }
     return;
 }
@@ -274,31 +222,24 @@ void xRead_Select_button(void){
 void xNextTrack(void){
     selected_song = (selected_song + 1) % songs.size();
     xSemaphoreGive(xReadSemaphore);
-    if(menu_state == kNOW_PLAYING)
-        xSemaphoreGive(xPlayScreen);
+    isPN = 1;
 }
 
 void xPrevTrack(void){
     selected_song = (selected_song > 0) ? selected_song - 1 : songs.size() - 1;
     xSemaphoreGive(xReadSemaphore);
-    if(menu_state == kNOW_PLAYING)
-        xSemaphoreGive(xPlayScreen);
+    isPN = 1;
 }
 
 void xScreenToggle(void){
     if (menu_state == kMENU){
-        //vTaskSuspend(xMenuHandle);
-        //vTaskResume(xNowPlayingHandle);
         xSemaphoreGive(xPlayScreen);
         menu_state = kNOW_PLAYING;
     }
     else if (menu_state == kNOW_PLAYING){
         menu_state = kMENU;
-        //vTaskResume(xMenuHandle);
-        //vTaskSuspend(xNowPlayingHandle);
         re_state_t state = kNOTHING;
         xQueueSendFromISR(xREQueue, &state, 0);
-        //xQueueSendFromISR(xREQueue, &state, 0);
     }
 
     return;
@@ -314,11 +255,7 @@ void xPauseSong( void ) {
     }
 }
 
-void xFastForward( void ) {
-    ff = 1;
-}
-
-void vReadSongNew(void *pvParameters)
+void vReadSong(void *pvParameters)
 {
     uint8_t songBuff[BUFFERSIZE] = { 0 };
     FIL mySong;
@@ -330,27 +267,29 @@ void vReadSongNew(void *pvParameters)
         if (xSemaphoreTake(xReadSemaphore, portMAX_DELAY)) {
             if (FR_NO_FILE == f_open(&mySong, songs[selected_song].filename, FA_READ)) {
                 printf("file \"%s\" not found!\n", songs[selected_song].filename);
-
             }
             else {
                 current_track = selected_song;
                 readBytes = BUFFERSIZE;
                 isPlaying = 1;
                 ff = 0;
+                rw = 0;
                 stop = 0;
+                isPN = 0;
                 while (!myPlayer.readyForData());
                 while (!(readBytes < BUFFERSIZE)) {
                     if (!isPlaying) {
                         xSemaphoreTake(xPauseSemaphore, portMAX_DELAY);
                         isPlaying = 1;
                     }
-                    if (ff) {
+                    if (ff && f_tell(&mySong) < f_size(&mySong) - 51200) {
                         f_lseek(&mySong, f_tell(&mySong) + 51200);
                         ff = 0;
                     }
-//                    if (stop) {
-//                        break;
-//                    }
+                    if (rw && f_tell(&mySong) > 51200) {
+                        f_lseek(&mySong, f_tell(&mySong) - 51200);
+                        rw = 0;
+                    }
                     if (current_track != selected_song){
                         break;
                     }
@@ -358,47 +297,11 @@ void vReadSongNew(void *pvParameters)
                     xQueueSend(xSongQueue, songBuff, portMAX_DELAY);
                 }
                 f_close(&mySong);
+                if(!isPN)
+                    stop = 1;
+                if(menu_state == kNOW_PLAYING)
+                    xSemaphoreGive(xPlayScreen);
             }
-
-        }
-    }
-}
-
-void vReadSong (void *pvParameters) {
-
-    uint8_t songBuff[BUFFERSIZE] = {0};
-    FIL mySong;
-    UINT readBytes;
-
-    while(1) {
-        if(xSemaphoreTake(xReadSemaphore, portMAX_DELAY)) {
-           if(FR_NO_FILE == f_open(&mySong, songs[selected_song].filename, FA_READ)) {
-               puts("File not found!");
-           } else {
-               puts("playing file");
-               readBytes = BUFFERSIZE;
-               isPlaying = 1;
-               ff = 0;
-               stop = 0;
-               while(! myPlayer.readyForData());
-               while(! (readBytes < BUFFERSIZE)) {
-                   if(!isPlaying) {
-                       xSemaphoreTake(xPauseSemaphore, portMAX_DELAY);
-                       isPlaying = 1;
-                   }
-                   if(ff) {
-                       f_lseek(&mySong, f_tell(&mySong) + 51200);
-                       ff = 0;
-                   }
-                   if(stop) {
-                       break;
-                   }
-                   f_read(&mySong, songBuff, BUFFERSIZE, &readBytes);
-                   xQueueSend(xSongQueue, songBuff, portMAX_DELAY);
-               }
-               f_close(&mySong);
-           }
-
         }
     }
 }
@@ -409,52 +312,27 @@ inline float map(float x, float in_min, float in_max, float out_min, float out_m
 
 void vPlaySong (void *pvParameters) {
 
-//    auto adc = LabAdc();
-//    adc.AdcInitBurstMode();
-//    adc.AdcSelectPin(pot_pin);
-
-
-    //= 254, volume_prev = 254;
-    //int counter = 0;
     re_state_t re_state = kLEFT_TURN;
     uint8_t songBuff[BUFFERSIZE];
 
     while(1) {
         if(xQueueReceive(xVolumeQueue, &re_state, 0)) {
-            printf("%d\n", vol);
-            //volume = (int)map(volume, 0, 100, 80, 0);
             if(re_state == kLEFT_TURN) {
-                //printf("Turned down\n");
                 if(vol < 100)
                     vol += 5;
                 myPlayer.setVolume(vol, vol);
             }
             else if(re_state == kRIGHT_TURN) {
-                //printf("Turned up\n");
                 if (vol > 0)
                     vol -= 5;
                 myPlayer.setVolume(vol, vol);
             }
-            //int vol = 254 - (((100 * (100 - (int)volume)) + (254 * (int)volume)) / 100);
-
         }
-//        if (counter++ == 20){
-//            counter = 0;
-//            volume = adc.ReadAdcVoltageByChannel(pot_channel);
-//            volume = (int)map(adc.ReadAdcVoltageByChannel(pot_channel), 0, 3.3, 80, 0);
-//            //printf("setting volume to %d\n", volume);
-//            if (volume != volume_prev){
-//                myPlayer.setVolume(volume, volume);
-//                volume_prev = volume;
-//            }
-//        }
-
-       // if (xQueueReceive())
 
         xQueueReceive(xSongQueue, songBuff, portMAX_DELAY);
 
         myPlayer.sendData(songBuff, BUFFERSIZE);
-        vTaskDelay(10);
+        vTaskDelay(15);
     }
 }
 
@@ -470,7 +348,6 @@ void vPopulateSongs(void *pvParameters){
             printf("Track: %s\n", (song.track).c_str());
             printf("Filename: %s\n", song.filename);
             vTaskDelay(500);
-
         }
         vTaskDelay(1000);
     }
@@ -491,74 +368,58 @@ void vMenuScreen(void *pvParameters){
     oled->draw_line(0, i, 134, i, OLED::tColor::WHITE);
     oled->display();
     i++;
-    oled->oprintf(0,i++ * 8, " Track #:%d", song_cursor);
+    oled->oprintf(0,i++ * 8, " Track #:%d", song_cursor + 1);
     oled->oprintf(0,i++ * 8, " Artist:");
     oled->oprintf(0,i++ * 8, " %s ", songs[song_cursor].artist.c_str());
 //        token = strtok(NULL,"-");
     oled->oprintf(0,i++ * 8, " Track:");
     oled->oprintf(0,i++ * 8, " %s ", songs[song_cursor].track.c_str());
     oled->oprintf(0,i++ * 8,"\n");
+    oled->draw_line(0, 63, 134, 63, OLED::tColor::WHITE);
+    oled->display();
 
     while(1){
 
         if (xQueueReceive(xREQueue, &re_state, portMAX_DELAY)){
+            menu_counter = 0;
             switch(re_state) {
                 case kLEFT_TURN:
-                    //puts("left turn received");
                     song_cursor = (song_cursor > 0) ? song_cursor - 1 : songs.size() - 1;
-                    //printf("left selected song: %d\n",song_cursor);
                     break;
                 case kRIGHT_TURN:
-                    //puts("right turn received");
                     song_cursor = (song_cursor + 1) % songs.size();
-                    //printf("left selected song: %d\n",song_cursor);
                     break;
                 case kBUTTON_PRESS:
                     //play selected song
                     break;
                 case kNOTHING:
-                    printf("returned from Now Playing\nSong Cursor: %d\n", song_cursor);
                     break;
                 default:
                     break;
             }
-            //puts("hit test case\n");
-            oled = OLED::getInstance();
             oled->clear();
-            //puts("hit test case2\n");
             oled->display();
             i = 0;
             oled->draw_line(0, i, 134, i, OLED::tColor::WHITE);
-            //puts("got to 473\n");
-            oled->display();
-            //puts("got to 475\n");
             i++;
-            oled->oprintf(0,i++ * 8, " Track #:%d", song_cursor);
+            oled->oprintf(0,i++ * 8, " Track #:%d", song_cursor + 1);
             oled->oprintf(0,i++ * 8, " Artist:");
             oled->oprintf(0,i++ * 8, " %s ", songs[song_cursor].artist.c_str());
     //        token = strtok(NULL,"-");
             oled->oprintf(0,i++ * 8, " Track:");
             oled->oprintf(0,i++ * 8, " %s ", songs[song_cursor].track.c_str());
             oled->oprintf(0,i++ * 8,"\n");
+            oled->draw_line(0, 63, 134, 63, OLED::tColor::WHITE);
             oled->display();
-            vTaskDelay(50);
+//            vTaskDelay(50);
 
             xQueueReset(xREQueue);
-
-            //selected_song = (selected_song + 1) % songs.size();
-
-            //vTaskDelay(1000);
-
         }
-
     }
-
 }
 
 void vNowPlayingScreen(void *pvParameters){
-    //vTaskSuspend(NULL);
     auto oled = OLED::getInstance();
-    //oled->init();
     oled->clear();
     oled->display();
     unsigned int i = 0;
@@ -566,35 +427,55 @@ void vNowPlayingScreen(void *pvParameters){
     int previous_track = -1;
 
     while(1){
-        //if ((int)selected_song != previous_track){
             xSemaphoreTake(xPlayScreen, portMAX_DELAY);
-            i = 0;
-            oled->draw_line(0, i, 134, i, OLED::tColor::WHITE);
-            oled->display();
-            i++;
-            oled->oprintf(0,i++ * 8, " Now Playing:");
-            oled->oprintf(0,i++ * 8, " Artist:");
-            oled->oprintf(0,i++ * 8, " %s ", songs[selected_song].artist.c_str());
-    //        token = strtok(NULL,"-");
-            oled->oprintf(0,i++ * 8, " Track:");
-            oled->oprintf(0,i++ * 8, " %s ", songs[selected_song].track.c_str());
-            oled->oprintf(0,i++ * 8,"\n");
-            oled->clear();
-            previous_track = (int)selected_song;
-       // }
-        //else {
-            vTaskDelay(1);
-        //}
-
+            if(stop) {
+                oled->clear();
+                oled->display();
+                oled->draw_line(0, 0, 134, 0, OLED::tColor::WHITE);
+                oled->oprintf(0, 8, " No Song Playing");
+                oled->draw_line(0, 63, 134, 63, OLED::tColor::WHITE);
+                oled->display();
+            } else {
+                i = 0;
+                oled->clear();
+                oled->display();
+                oled->draw_line(0, i, 134, i, OLED::tColor::WHITE);
+                oled->display();
+                i++;
+                oled->oprintf(0,i++ * 8, " Now Playing:");
+                oled->oprintf(0,i++ * 8, " Artist:");
+                oled->oprintf(0,i++ * 8, " %s ", songs[selected_song].artist.c_str());
+        //        token = strtok(NULL,"-");
+                oled->oprintf(0,i++ * 8, " Track:");
+                oled->oprintf(0,i++ * 8, " %s ", songs[selected_song].track.c_str());
+                oled->oprintf(0,i++ * 8,"\n");
+                oled->draw_line(0, 63, 134, 63, OLED::tColor::WHITE);
+                oled->display();
+                previous_track = (int)selected_song;
+                vTaskDelay(1);
+            }
     }
 
+}
+
+void vMenuTimeOut (void *pvParameters) {
+
+    while (1) {
+        menu_counter++;
+        if(menu_state == kMENU && menu_counter == 80) {
+            xSemaphoreGive(xPlayScreen);
+            menu_state = kNOW_PLAYING;
+            menu_counter = 0;
+        }
+        vTaskDelay(100);
+    }
 }
 
 
 
 int main(void){
 
-    printf("sys clock: %u\n", sys_get_cpu_clock());
+    //printf("sys clock: %u\n", sys_get_cpu_clock());
 
     xReadSemaphore  = xSemaphoreCreateBinary();
     xPauseSemaphore = xSemaphoreCreateBinary();
@@ -618,31 +499,25 @@ int main(void){
     screen_toggle_button.setPulldown();
 
     re_clk.setAsInput();
-    //re_clk.setPulldown();
     re_clk.setPullup();
 
     re_data.setAsInput();
-    //re_data.setPulldown();
     re_data.setPullup();
 
     select_button.setAsInput();
-    //re_button.setPulldown();
-    select_button.setPulldown();
+    select_button.setPullup();
 
     GPIOInterrupt *gpio_interrupts = GPIOInterrupt::getInstance();
     gpio_interrupts->Initialize();
     gpio_interrupts->AttachInterruptHandler(2, 0, (IsrPointer)xPauseSong, kRisingEdge);
     gpio_interrupts->AttachInterruptHandler(2, 4, (IsrPointer)xRead_RE, kBothEdges);
-    gpio_interrupts->AttachInterruptHandler(2, 6, (IsrPointer)xRead_Select_button, kRisingEdge);
+    gpio_interrupts->AttachInterruptHandler(2, 6, (IsrPointer)xRead_Select_button, kFallingEdge);
     gpio_interrupts->AttachInterruptHandler(2, 1, (IsrPointer)xPrevTrack, kRisingEdge);
     gpio_interrupts->AttachInterruptHandler(2, 2, (IsrPointer)xNextTrack, kRisingEdge);
     gpio_interrupts->AttachInterruptHandler(2, 3, (IsrPointer)xScreenToggle, kRisingEdge);
-    //gpio_interrupts->AttachInterruptHandler(0, 0, (IsrPointer)vSemaphore2Supplier, kRisingEdge);
     isr_register(EINT3_IRQn, Eint3Handler);
 
     getFilesFromSD(&songs);
-
-    //eint3_enable_port2(0, eint_rising_edge, xFastForward);
 
     if(! myPlayer.begin()) {
         printf("Could not initialize decoder!\n");
@@ -655,11 +530,11 @@ int main(void){
     //myPlayer.sineTest(0x01, 1000);
 
     scheduler_add_task(new terminalTask(PRIORITY_HIGH));
-    xTaskCreate(vReadSongNew, "SongRead", 2000, NULL, PRIORITY_LOW, NULL);
+    xTaskCreate(vReadSong, "SongRead", 2000, NULL, PRIORITY_LOW, NULL);
     xTaskCreate(vPlaySong, "SongPlay", 2000, NULL, PRIORITY_MEDIUM, NULL);
-    //xTaskCreate(vPopulateSongs, "Get Songs", 4000, NULL, PRIORITY_LOW, NULL);
     xTaskCreate(vMenuScreen, "Menu Screen", 512, NULL, PRIORITY_LOW, &xMenuHandle);
     xTaskCreate(vNowPlayingScreen, "Now Playing Screen", 512, NULL, PRIORITY_LOW, &xNowPlayingHandle);
+    xTaskCreate(vMenuTimeOut, "MenuWatch", 512, NULL, PRIORITY_LOW, NULL);
     scheduler_start();
     return -1;
 }

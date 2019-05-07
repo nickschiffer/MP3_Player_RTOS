@@ -123,7 +123,7 @@ OLED::OLED(uint8_t i2c_address, uint8_t width, uint8_t height)
     OLED::bufsize = OLED::pages * width;
     OLED::screen_buffer = (uint8_t *) malloc(OLED::bufsize);
     OLED::X = OLED::Y = 0;
-    OLED::ttyMode = OLED_DEFAULT_TTY_MODE
+    OLED::ttyMode = false //OLED_DEFAULT_TTY_MODE
     ;
 #ifdef DEBUG_OLED
     printf("address: %X, height: %u, width: %u, pages: %u, bufsize: %u, screenbuffer: %X\n", OLED::i2c_address, OLED::height, OLED::width, OLED::pages,
