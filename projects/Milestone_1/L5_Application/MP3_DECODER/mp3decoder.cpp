@@ -115,6 +115,12 @@ void mp3Decoder::setVolume(uint8_t left, uint8_t right)
     sciWrite(VS1053_REG_VOLUME, vol);
 }
 
+void mp3Decoder::setBassTreble(uint8_t b, uint8_t t) {
+    uint16_t setting;
+    setting = (15 | (b << 4) | (1 << 8) | (t << 12));
+    sciWrite(VS1053_REG_BASS, setting);
+}
+
 void mp3Decoder::sendData(uint8_t *buffer, uint16_t buffsize)
 {
     while(! readyForData());

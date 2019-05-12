@@ -60,6 +60,7 @@ public:
     bool begin(void);
     void reset(void);
     void setVolume(uint8_t left, uint8_t right);
+    void setBassTreble(uint8_t b, uint8_t t);
     void setDCS(SetBit s);
     void sendData(uint8_t *buffer, uint16_t buffersize);
     bool readyForData();

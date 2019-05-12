@@ -307,6 +307,34 @@ void OLED::draw_string_P(uint_fast8_t x, uint_fast8_t y, const char* s, tSize sc
 
 void OLED::draw_rectangle(uint_fast8_t x0, uint_fast8_t y0, uint_fast8_t x1, uint_fast8_t y1, tFillmode fillMode, tColor color)
 {
+    // Swap x0 and x1 if in wrong order
+        if (x0 > x1)
+        {
+            uint_fast8_t tmp = x0;
+            x0 = x1;
+            x1 = tmp;
+        }
+        // Swap y0 and y1 if in wrong order
+        if (y0 > y1)
+        {
+            uint_fast8_t tmp = y0;
+            y0 = y1;
+            y1 = tmp;
+        }
+        if (fillMode == SOLID)
+        {
+            for (uint_fast8_t y = y0; y <= y1; y++)
+            {
+                draw_line(x0, y, x1, y, color);
+            }
+        }
+        else
+        {
+            draw_line(x0, y0, x1, y0, color);
+            draw_line(x0, y1, x1, y1, color);
+            draw_line(x0, y0, x0, y1, color);
+            draw_line(x1, y0, x1, y1, color);
+        }
 }
 
 void OLED::draw_circle(uint_fast8_t x, uint_fast8_t y, uint_fast8_t radius, tFillmode fillMode, tColor color)
@@ -355,7 +383,15 @@ void OLED::draw_pixel(uint_fast8_t x, uint_fast8_t y, tColor color)
 
 void OLED::set_invert(bool enable)
 {
-
+        sendCommand(0x00); // command
+        if (enable)
+        {
+            sendCommand(0xA7); // invert display
+        }
+        else
+        {
+            sendCommand(0xA6); // normal display
+        }
 }
 
 void OLED::set_contrast(uint8_t contrast)

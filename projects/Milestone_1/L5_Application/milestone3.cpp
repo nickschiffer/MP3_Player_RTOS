@@ -36,6 +36,10 @@ volatile bool rw;
 volatile bool stop = 1;
 volatile bool isPN = 0;
 volatile uint8_t vol = 40;
+volatile uint8_t bass = 7;
+volatile uint8_t treble = 5;
+volatile bool bt;
+volatile bool isBT = 1;
 
 TaskHandle_t      xPause;
 TaskHandle_t      xNowPlayingHandle;
@@ -46,6 +50,8 @@ QueueHandle_t     xSongQueue;
 QueueHandle_t     xVolumeQueue;
 QueueHandle_t     xREQueue;
 SemaphoreHandle_t xPlayScreen;
+SemaphoreHandle_t xBTScreen;
+SemaphoreHandle_t xUpdateBT;
 
 auto play_pause_button    = GPIO_0_1_2(2, 0);
 auto prev_track_button    = GPIO_0_1_2(2, 1);
@@ -77,7 +83,8 @@ typedef enum {
 
 typedef enum {
     kMENU,
-    kNOW_PLAYING
+    kNOW_PLAYING,
+    kTREB_BASS
 } menu_state_t;
 
 menu_state_t menu_state = kMENU;
@@ -203,6 +210,32 @@ void xRead_RE(void){
                     xQueueSend(xVolumeQueue, &state, 0);
                 }
             }
+        } else if(menu_state == kTREB_BASS) {
+            if (clock_value != data_value){
+                if(bt == 0) {
+                    if(bass > 0)
+                        bass -= 1;
+                } else {
+                    if(treble == 0)
+                        treble = 15;
+                    else if(treble > 8 || (treble > 0 && treble < 8))
+                        treble -= 1;
+                }
+            }
+            else {
+                //re_state_t state = kRIGHT_TURN;
+                if(bt == 0) {
+                    if(bass < 15)
+                        bass += 1;
+                } else {
+                    if(treble == 15)
+                        treble = 0;
+                    else if(treble < 7 || (treble < 15 && treble > 7))
+                        treble += 1;
+                }
+            }
+            isBT = 1;
+            xSemaphoreGive(xUpdateBT);
         }
         return;
     }
@@ -213,6 +246,11 @@ void xRead_Select_button(void){
     if (menu_state == kMENU){
         selected_song = song_cursor;
         xSemaphoreGive(xReadSemaphore);
+        menu_counter = 0;
+    }
+    if (menu_state == kTREB_BASS){
+        bt = !bt;
+        xSemaphoreGive(xUpdateBT);
         menu_counter = 0;
     }
     return;
@@ -233,13 +271,17 @@ void xPrevTrack(void){
 
 void xScreenToggle(void){
     if (menu_state == kMENU){
-        xSemaphoreGive(xPlayScreen);
-        menu_state = kNOW_PLAYING;
+        menu_state = kTREB_BASS;
+        xSemaphoreGive(xBTScreen);
     }
-    else if (menu_state == kNOW_PLAYING){
+    else if (menu_state == kNOW_PLAYING) {
         menu_state = kMENU;
         re_state_t state = kNOTHING;
         xQueueSendFromISR(xREQueue, &state, 0);
+    }
+    else if (menu_state == kTREB_BASS) {
+        menu_state = kNOW_PLAYING;
+        xSemaphoreGive(xPlayScreen);
     }
 
     return;
@@ -311,7 +353,6 @@ inline float map(float x, float in_min, float in_max, float out_min, float out_m
 }
 
 void vPlaySong (void *pvParameters) {
-
     re_state_t re_state = kLEFT_TURN;
     uint8_t songBuff[BUFFERSIZE];
 
@@ -319,16 +360,19 @@ void vPlaySong (void *pvParameters) {
         if(xQueueReceive(xVolumeQueue, &re_state, 0)) {
             if(re_state == kLEFT_TURN) {
                 if(vol < 100)
-                    vol += 5;
+                    vol += 2;
                 myPlayer.setVolume(vol, vol);
             }
             else if(re_state == kRIGHT_TURN) {
                 if (vol > 0)
-                    vol -= 5;
+                    vol -= 2;
                 myPlayer.setVolume(vol, vol);
             }
         }
-
+        if (isBT) {
+            myPlayer.setBassTreble(bass, treble);
+            isBT = 0;
+        }
         xQueueReceive(xSongQueue, songBuff, portMAX_DELAY);
 
         myPlayer.sendData(songBuff, BUFFERSIZE);
@@ -458,11 +502,94 @@ void vNowPlayingScreen(void *pvParameters){
 
 }
 
+void vBassTreble (void *pvParameters) {
+    auto oled = OLED::getInstance();
+    uint8_t newTreble;
+
+    while (1) {
+        xSemaphoreTake(xBTScreen, portMAX_DELAY);
+        if(treble > 7)
+            newTreble = treble - 8;
+        else
+            newTreble = treble + 8;
+        oled->clear();
+        oled->display();
+        //Top Line
+        oled->draw_line(0, 0, 134, 0, OLED::tColor::WHITE);
+
+        //Initial Bass/Treble Display
+        if(bt == 0) {
+            oled->draw_rectangle(5, 15, 32, 24, OLED::tFillmode::SOLID, OLED::tColor::WHITE);
+            oled->draw_string(0, 2 * 8, " Bass\n", OLED::tSize::NORMAL_SIZE, OLED::tColor::BLACK);
+
+            oled->draw_rectangle(5, 39, 44, 47, OLED::tFillmode::SOLID, OLED::tColor::BLACK);
+            oled->draw_string(0, 5 * 8, " Treble\n", OLED::tSize::NORMAL_SIZE, OLED::tColor::WHITE);
+
+        } else {
+            oled->draw_rectangle(5, 39, 44, 47, OLED::tFillmode::SOLID, OLED::tColor::WHITE);
+            oled->draw_string(0, 5 * 8, " Treble\n", OLED::tSize::NORMAL_SIZE, OLED::tColor::BLACK);
+
+            oled->draw_rectangle(5, 15, 32, 24, OLED::tFillmode::SOLID, OLED::tColor::BLACK);
+            oled->draw_string(0, 2 * 8, " Bass\n", OLED::tSize::NORMAL_SIZE, OLED::tColor::WHITE);
+        }
+
+
+        //Endpoint Ticks
+        oled->draw_line(55, 15, 55, 23, OLED::tColor::WHITE);
+        oled->draw_line(128, 15, 128, 23, OLED::tColor::WHITE);
+        oled->draw_line(55, 39, 55, 47, OLED::tColor::WHITE);
+        oled->draw_line(128, 39, 128, 47, OLED::tColor::WHITE);
+        //Reset Treble and Bass Volume Lines
+        oled->draw_line(56, 19, 127, 19, OLED::tColor::BLACK);
+        oled->draw_line(56, 43, 127, 43, OLED::tColor::BLACK);
+        oled->draw_line(55, 19, map(bass, 0, 15, 55, 128), 19, OLED::tColor::WHITE);
+        oled->draw_line(55, 43, map(newTreble, 0, 15, 55, 128), 43, OLED::tColor::WHITE);
+        oled->display();
+        //Botton Line
+        oled->draw_line(0, 63, 134, 63, OLED::tColor::WHITE);
+        oled->display();
+
+        while(menu_state == kTREB_BASS) {
+            if(xSemaphoreTake(xUpdateBT, 0)) {
+                menu_counter = 0;
+                if(treble > 7)
+                    newTreble = treble - 8;
+                else
+                    newTreble = treble + 8;
+                if(bt == 0) {
+                    oled->draw_rectangle(5, 15, 32, 24, OLED::tFillmode::SOLID, OLED::tColor::WHITE);
+                    oled->draw_string(0, 2 * 8, " Bass\n", OLED::tSize::NORMAL_SIZE, OLED::tColor::BLACK);
+
+                    oled->draw_rectangle(5, 39, 44, 47, OLED::tFillmode::SOLID, OLED::tColor::BLACK);
+                    oled->draw_string(0, 5 * 8, " Treble\n", OLED::tSize::NORMAL_SIZE, OLED::tColor::WHITE);
+
+                    oled->draw_line(56, 19, 127, 19, OLED::tColor::BLACK);
+                    oled->draw_line(55, 19, map(bass, 0, 15, 55, 128), 19, OLED::tColor::WHITE);
+                } else {
+                    oled->draw_rectangle(5, 39, 44, 47, OLED::tFillmode::SOLID, OLED::tColor::WHITE);
+                    oled->draw_string(0, 5 * 8, " Treble\n", OLED::tSize::NORMAL_SIZE, OLED::tColor::BLACK);
+
+                    oled->draw_rectangle(5, 15, 32, 24, OLED::tFillmode::SOLID, OLED::tColor::BLACK);
+                    oled->draw_string(0, 2 * 8, " Bass\n", OLED::tSize::NORMAL_SIZE, OLED::tColor::WHITE);
+
+                    oled->draw_line(56, 43, 127, 43, OLED::tColor::BLACK);
+                    oled->draw_line(55, 43, map(newTreble, 0, 15, 55, 128), 43, OLED::tColor::WHITE);
+                }
+                oled->display();
+            }
+            //printf("From Task\nBass: %d\nTreble: %d\n", bass, treble);
+            vTaskDelay(50);
+        }
+
+
+    }
+}
+
 void vMenuTimeOut (void *pvParameters) {
 
     while (1) {
         menu_counter++;
-        if(menu_state == kMENU && menu_counter == 80) {
+        if((menu_state == kMENU || menu_state == kTREB_BASS) && menu_counter == 80) {
             xSemaphoreGive(xPlayScreen);
             menu_state = kNOW_PLAYING;
             menu_counter = 0;
@@ -479,7 +606,9 @@ int main(void){
 
     xReadSemaphore  = xSemaphoreCreateBinary();
     xPauseSemaphore = xSemaphoreCreateBinary();
+    xBTScreen       = xSemaphoreCreateBinary();
     xPlayScreen     = xSemaphoreCreateBinary();
+    xUpdateBT       = xSemaphoreCreateBinary();
     xVolumeQueue    = xQueueCreate(1, sizeof(int));
     xSongQueue      = xQueueCreate(1, BUFFERSIZE);
     xREQueue        = xQueueCreate(2, sizeof(re_state_t));
@@ -535,6 +664,7 @@ int main(void){
     xTaskCreate(vMenuScreen, "Menu Screen", 512, NULL, PRIORITY_LOW, &xMenuHandle);
     xTaskCreate(vNowPlayingScreen, "Now Playing Screen", 512, NULL, PRIORITY_LOW, &xNowPlayingHandle);
     xTaskCreate(vMenuTimeOut, "MenuWatch", 512, NULL, PRIORITY_LOW, NULL);
+    xTaskCreate(vBassTreble, "BT Screen", 512, NULL, PRIORITY_LOW, NULL);
     scheduler_start();
     return -1;
 }
