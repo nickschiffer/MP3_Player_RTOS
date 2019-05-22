@@ -40,6 +40,10 @@ volatile uint8_t bass = 7;
 volatile uint8_t treble = 5;
 volatile bool bt;
 volatile bool isBT = 1;
+uint32_t timestamp = 0;
+uint16_t taskDelay = 300;
+uint16_t maxVol = 10; //Volume is backward on decoder (0 being loudest, 255 being quietest)
+uint16_t minVol = 100;
 
 TaskHandle_t      xPause;
 TaskHandle_t      xNowPlayingHandle;
@@ -258,42 +262,64 @@ void xRead_Select_button(void){
 
 
 void xNextTrack(void){
-    selected_song = (selected_song + 1) % songs.size();
-    xSemaphoreGive(xReadSemaphore);
-    isPN = 1;
+    uint32_t currentTime = xTaskGetMsCount();
+
+    if((currentTime >= timestamp + taskDelay) || timestamp == 0) {
+        timestamp = currentTime;
+        selected_song = (selected_song + 1) % songs.size();
+        xSemaphoreGive(xReadSemaphore);
+        isPN = 1;
+    }
 }
 
 void xPrevTrack(void){
-    selected_song = (selected_song > 0) ? selected_song - 1 : songs.size() - 1;
-    xSemaphoreGive(xReadSemaphore);
-    isPN = 1;
+    uint32_t currentTime = xTaskGetMsCount();
+
+    if((currentTime >= timestamp + taskDelay) || timestamp == 0) {
+        timestamp = currentTime;
+        selected_song = (selected_song > 0) ? selected_song - 1 : songs.size() - 1;
+        xSemaphoreGive(xReadSemaphore);
+        isPN = 1;
+    }
 }
 
 void xScreenToggle(void){
-    if (menu_state == kMENU){
-        menu_state = kTREB_BASS;
-        xSemaphoreGive(xBTScreen);
-    }
-    else if (menu_state == kNOW_PLAYING) {
-        menu_state = kMENU;
-        re_state_t state = kNOTHING;
-        xQueueSendFromISR(xREQueue, &state, 0);
-    }
-    else if (menu_state == kTREB_BASS) {
-        menu_state = kNOW_PLAYING;
-        xSemaphoreGive(xPlayScreen);
-    }
+    uint32_t currentTime = xTaskGetMsCount();
 
+    if((currentTime >= timestamp + taskDelay) || timestamp == 0) {
+        timestamp = currentTime;
+        if (menu_state == kMENU){
+            menu_state = kTREB_BASS;
+            xSemaphoreGive(xBTScreen);
+        }
+        else if (menu_state == kNOW_PLAYING) {
+            menu_state = kMENU;
+            re_state_t state = kNOTHING;
+            xQueueSendFromISR(xREQueue, &state, 0);
+        }
+        else if (menu_state == kTREB_BASS) {
+            menu_state = kNOW_PLAYING;
+            xSemaphoreGive(xPlayScreen);
+        }
+    }
+    //puts("Screen ISR triggered");
+    //printf("Screen ISR triggered");
+    //vTaskDelay(100);
     return;
 }
 
 void xPauseSong( void ) {
 
-    if(isPlaying) {
-        isPlaying = 0;
-    }
-    else {
-        xSemaphoreGive(xPauseSemaphore);
+    uint32_t currentTime = xTaskGetMsCount();
+
+    if((currentTime >= timestamp + taskDelay) || timestamp == 0) {
+        timestamp = currentTime;
+        if(isPlaying) {
+            isPlaying = 0;
+        }
+        else {
+            xSemaphoreGive(xPauseSemaphore);
+        }
     }
 }
 
@@ -359,12 +385,12 @@ void vPlaySong (void *pvParameters) {
     while(1) {
         if(xQueueReceive(xVolumeQueue, &re_state, 0)) {
             if(re_state == kLEFT_TURN) {
-                if(vol < 100)
+                if(vol < minVol)
                     vol += 2;
                 myPlayer.setVolume(vol, vol);
             }
             else if(re_state == kRIGHT_TURN) {
-                if (vol > 0)
+                if (vol > maxVol)
                     vol -= 2;
                 myPlayer.setVolume(vol, vol);
             }
