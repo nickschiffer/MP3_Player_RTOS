@@ -19,6 +19,7 @@
 #include <cstring>
 #include <task.h>
 #include <str.hpp>
+#include <cstdio>
 
 #define PRODUCER_BIT (1 << 1)
 #define CONSUMER_BIT (1 << 2)
