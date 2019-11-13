@@ -104,7 +104,6 @@ FRESULT getFilesFromSD(std::vector<song_t> *song_vec)
 {
     DIR Dir;
     FILINFO Finfo;
-//    FATFS *fs;
     FRESULT returnCode = FR_OK;
 
     unsigned int fileBytesTotal = 0, numFiles = 0, numDirs = 0;
@@ -157,7 +156,6 @@ FRESULT getFilesFromSD(std::vector<song_t> *song_vec)
                 std::string track(token);
                 song.track = track;
                 song.info = Finfo;
-//                snprintf(song.filename,15, "1:%s", Finfo.fname);
                 song_vec->push_back(song);
             }
             else {
@@ -170,7 +168,6 @@ FRESULT getFilesFromSD(std::vector<song_t> *song_vec)
                 std::string track(token);
                 song.track = track;
                 song.info = Finfo;
-//                snprintf(song.filename,15, "1:%s", Finfo.fname);
                 song_vec->push_back(song);
 
             }
@@ -227,7 +224,6 @@ void xRead_RE(void){
                 }
             }
             else {
-                //re_state_t state = kRIGHT_TURN;
                 if(bt == 0) {
                     if(bass < 15)
                         bass += 1;
@@ -302,9 +298,6 @@ void xScreenToggle(void){
             xSemaphoreGive(xPlayScreen);
         }
     }
-    //puts("Screen ISR triggered");
-    //printf("Screen ISR triggered");
-    //vTaskDelay(100);
     return;
 }
 
@@ -441,7 +434,6 @@ void vMenuScreen(void *pvParameters){
     oled->oprintf(0,i++ * 8, " Track #:%d", song_cursor + 1);
     oled->oprintf(0,i++ * 8, " Artist:");
     oled->oprintf(0,i++ * 8, " %s ", songs[song_cursor].artist.c_str());
-//        token = strtok(NULL,"-");
     oled->oprintf(0,i++ * 8, " Track:");
     oled->oprintf(0,i++ * 8, " %s ", songs[song_cursor].track.c_str());
     oled->oprintf(0,i++ * 8,"\n");
@@ -475,13 +467,11 @@ void vMenuScreen(void *pvParameters){
             oled->oprintf(0,i++ * 8, " Track #:%d", song_cursor + 1);
             oled->oprintf(0,i++ * 8, " Artist:");
             oled->oprintf(0,i++ * 8, " %s ", songs[song_cursor].artist.c_str());
-    //        token = strtok(NULL,"-");
             oled->oprintf(0,i++ * 8, " Track:");
             oled->oprintf(0,i++ * 8, " %s ", songs[song_cursor].track.c_str());
             oled->oprintf(0,i++ * 8,"\n");
             oled->draw_line(0, 63, 134, 63, OLED::tColor::WHITE);
             oled->display();
-//            vTaskDelay(50);
 
             xQueueReset(xREQueue);
         }
@@ -515,7 +505,6 @@ void vNowPlayingScreen(void *pvParameters){
                 oled->oprintf(0,i++ * 8, " Now Playing:");
                 oled->oprintf(0,i++ * 8, " Artist:");
                 oled->oprintf(0,i++ * 8, " %s ", songs[selected_song].artist.c_str());
-        //        token = strtok(NULL,"-");
                 oled->oprintf(0,i++ * 8, " Track:");
                 oled->oprintf(0,i++ * 8, " %s ", songs[selected_song].track.c_str());
                 oled->oprintf(0,i++ * 8,"\n");
@@ -603,7 +592,6 @@ void vBassTreble (void *pvParameters) {
                 }
                 oled->display();
             }
-            //printf("From Task\nBass: %d\nTreble: %d\n", bass, treble);
             vTaskDelay(50);
         }
 
@@ -627,8 +615,6 @@ void vMenuTimeOut (void *pvParameters) {
 
 
 int main(void){
-
-    //printf("sys clock: %u\n", sys_get_cpu_clock());
 
     xReadSemaphore  = xSemaphoreCreateBinary();
     xPauseSemaphore = xSemaphoreCreateBinary();
